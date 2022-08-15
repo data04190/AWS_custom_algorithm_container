@@ -8,7 +8,7 @@
 .
 |-- Dockerfile
 |-- build_and_push.sh
-`-- simpleESN
+`-- ESN
     |-- nginx.conf
     |-- predictor.py
     |-- serve

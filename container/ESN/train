@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-# A sample training component that trains a simple scikit-learn decision tree model.
 # This implementation works in File mode and makes no assumptions about the input file names.
 # Input is specified as CSV with a data point in each row and the labels in the first column.
 
@@ -11,9 +10,9 @@ import os
 import pickle
 import sys
 import traceback
+import numpy as np
+from scipy import linalg 
 
-import pandas as pd
-from sklearn import tree
 
 # These are the paths to where SageMaker mounts interesting things in your container.
 
@@ -31,6 +30,7 @@ channel_name='training'
 training_path = os.path.join(input_path, channel_name)
 
 # The function to execute the training.
+
 def train():
 
     print('Starting the training.')
@@ -38,37 +38,94 @@ def train():
     try:
     
         # Read in any hyperparameters that the user passed with the training job
+        
         with open(param_path, 'r') as tc:
             trainingParams = json.load(tc)
 
-        # Take the set of files and read them all into a single pandas dataframe
+        # Take the set of files and read them all into a single pandas dataframe       
         input_files = [ os.path.join(training_path, file) for file in os.listdir(training_path) ]
         if len(input_files) == 0:
             raise ValueError(('There are no files in {}.\n' +
                               'This usually indicates that the channel ({}) was incorrectly specified,\n' +
                               'the data specification in S3 was incorrectly specified or the role specified\n' +
                               'does not have permission to access the data.').format(training_path, channel_name))
-        raw_data = [ pd.read_csv(file, header=None) for file in input_files ]
-        train_data = pd.concat(raw_data)
+                              
+        
+        print(input_files)
+        data = np.loadtxt('/opt/ml/input/data/training/MackeyGlass_t17.csv')
+        
+        
+               
+        #trainLen = 2000
+        #testLen = 2000
+        #initLen = 100
+               
+        # generate the ESN reservoir
 
-        # labels are in the first column
-        train_y = train_data.iloc[:,0]
-        train_X = train_data.iloc[:,1:]
+        inSize = outSize = 1
+        resSize = 1000
+        a = 0.3    # leaking rate
 
-        # Here we only support a single hyperparameter. Note that hyperparameters are always passed in as
-        # strings, so we need to do any necessary conversions.
-        max_leaf_nodes = trainingParams.get('max_leaf_nodes', None)
-        if max_leaf_nodes is not None:
-            max_leaf_nodes = int(max_leaf_nodes)
+        np.random.seed(42)
+        
+        Win = (np.random.rand(resSize,1+inSize) - 0.5) * 1
+        W = np.random.rand(resSize,resSize) - 0.5 
+        
+        # normalizing and setting spectral radius (correct, slow):
+        print('Computing spectral radius...')
+        rhoW = max(abs(linalg.eig(W)[0]))
+        print('done.')
+        W *= 1.25 / rhoW
+        
+        # allocated memory for the design (collected states) matrix
+        X = np.zeros((1+inSize+resSize,trainLen-initLen))
+    
+        # set the corresponding target matrix directly
+        Yt = data[None,initLen+1:trainLen+1] 
+        
+        # run the reservoir with the data and collect X
+        x = np.zeros((resSize,1))
+        for t in range(trainLen):
+            u = data[t]
+            x = (1-a)*x + a*np.tanh( np.dot( Win, np.vstack((1,u)) ) + np.dot( W, x ) )
+            if t >= initLen:
+                X[:,t-initLen] = np.vstack((1,u,x))[:,0]
+                
+        # train the output by ridge regression
+        reg = 1e-8  # regularization coefficient
+        
+        # direct equations from texts:
+        #X_T = X.T
+        #Wout = np.dot( np.dot(Yt,X_T), linalg.inv( np.dot(X,X_T) + \
+        #    reg*np.eye(1+inSize+resSize) ) )
+        # using scipy.linalg.solve:
+        Wout = linalg.solve( np.dot(X,X.T) + reg*np.eye(1+inSize+resSize), 
+            np.dot(X,Yt.T) ).T
+        
+        # run the trained ESN in a generative mode. no need to initialize here, 
+        # because x is initialized with training data and we continue from there.
+        Y = np.zeros((outSize,testLen))
+        u = data[trainLen]
+        for t in range(testLen):
+            x = (1-a)*x + a*np.tanh( np.dot( Win, np.vstack((1,u)) ) + np.dot( W, x ) )
+            y = np.dot( Wout, np.vstack((1,u,x)) )
+            Y[:,t] = y
+            # generative mode:
+            u = y
+            ## this would be a predictive mode:
+            #u = data[trainLen+t+1]        
+            
+            
+        # compute MSE for the first errorLen time steps
+        errorLen = 500
+        mse = sum( np.square( data[trainLen+1:trainLen+errorLen+1] - 
+            Y[0,0:errorLen] ) ) / errorLen
+        print('MSE = ' + str( mse ))
+        
 
-        # Now use scikit-learn's decision tree classifier to train the model.
-        clf = tree.DecisionTreeClassifier(max_leaf_nodes=max_leaf_nodes)
-        clf = clf.fit(train_X, train_y)
-
-        # save the model
-        with open(os.path.join(model_path, 'decision-tree-model.pkl'), 'wb') as out:
-            pickle.dump(clf, out)
-        print('Training complete.')
+        print('\nTraining complete.')
+        
+        
     except Exception as e:
         # Write out an error file. This will be returned as the failureReason in the
         # DescribeTrainingJob result.
@@ -79,6 +136,8 @@ def train():
         print('Exception during training: ' + str(e) + '\n' + trc, file=sys.stderr)
         # A non-zero exit code causes the training job to be marked as Failed.
         sys.exit(255)
+        
+def 
 
 if __name__ == '__main__':
     train()

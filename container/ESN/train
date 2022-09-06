@@ -32,7 +32,13 @@ training_path = os.path.join(input_path, channel_name)
 
 # The function to execute the training.
 
-def train():
+def train(args):
+
+    # Parse arguments
+    trainLen = args.trainLen
+    testLen = args.testLen
+    initLen = args.initLen
+  
 
     print('Starting the training.')
     
@@ -54,9 +60,7 @@ def train():
         
         print(input_files)
         data = np.loadtxt('/opt/ml/input/data/training/MackeyGlass_t17.csv')
-        
-        
-               
+                              
         #trainLen = 2000
         #testLen = 2000
         #initLen = 100
@@ -137,7 +141,7 @@ def train():
         print('Exception during training: ' + str(e) + '\n' + trc, file=sys.stderr)
         # A non-zero exit code causes the training job to be marked as Failed.
         sys.exit(255)
-        
+
 def parse_args():
 
     parser = argparse.ArgumentParser()
@@ -151,7 +155,8 @@ def parse_args():
     return args            
 
 if __name__ == '__main__':
-    train()
+    args = parse_args()
+    train(args) 
 
     # A zero exit code causes the job to be marked a Succeeded.
     sys.exit(0)

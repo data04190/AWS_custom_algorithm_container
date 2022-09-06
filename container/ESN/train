@@ -9,6 +9,7 @@ import json
 import os
 import pickle
 import sys
+import argparse
 import traceback
 import numpy as np
 from scipy import linalg 
@@ -137,7 +138,17 @@ def train():
         # A non-zero exit code causes the training job to be marked as Failed.
         sys.exit(255)
         
-def 
+def parse_args():
+
+    parser = argparse.ArgumentParser()
+    
+    # Hyperparameter Setting
+    parser.add_argument('--trainLen', type=int, default=2000)
+    parser.add_argument('--testLen', type=int, default=2000)    
+    parser.add_argument('--initLen', type=int, default=100)
+        
+    args = parser.parse_args()
+    return args            
 
 if __name__ == '__main__':
     train()

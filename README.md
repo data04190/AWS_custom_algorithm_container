@@ -2,7 +2,7 @@
 
 <br>
 
-#### ontainer 파일 구조
+#### Container 파일 구조
 
 ```
 .
